@@ -9,6 +9,34 @@ caixa_de_entrada = [
     {"remetente": "contadigitalvivo@vivo.com.br", "assunto": "Sua Fatura Digital Vivo Chegou"},
 ]
 
+
+MEMORIA = {
+    "importante": {},
+    "lixo": {},
+}
+
+def nota_da_pista(pista):
+    vezes_importante = MEMORIA["importante"].get(pista, 0)
+    vezes_lixo = MEMORIA["lixo"].get(pista, 0)
+    return (vezes_importante + 1) / (vezes_importante + vezes_lixo + 2)
+
+def aprender(email, categoria):
+    contagem = MEMORIA[categoria]
+    for pista in pegar_pistas(email):
+        contagem[pista] = contagem.get(pista, 0) + 1
+
+def calcular_nota(email):
+    notas = []
+
+    for pista in pegar_pistas(email):
+        conhece = pista in MEMORIA["importante"] or pista in MEMORIA["lixo"]
+        if conhece:
+            notas.append(nota_da_pista(pista))
+    if len(notas) == 0:
+        return None
+    else:
+        return sum(notas) / len(notas)
+        
 def adicionar_regra():
     while True:
         print("Quer adicionar alguma coisa?")
@@ -140,9 +168,50 @@ def classificar(email):
             return "importante"
         elif palavras in PISTAS_LIXO:
             return "lixo"
-    return "não sei"
-    
-adicionar_regra()
 
-for email in caixa_de_entrada:
-    print(classificar(email), "->", email["assunto"])
+    nota = calcular_nota(email)
+
+    if nota is None:
+        return "não sei"
+    elif nota >= 0.65:
+        return "importante"
+    elif nota <= 0.35:
+        return "lixo"
+    else:
+        return "não sei"
+    
+# ---------------------------------------------------------------
+# Testes antigos (já cumpriram o papel, ficam comentados)
+# ---------------------------------------------------------------
+# adicionar_regra()
+#
+# for email in caixa_de_entrada:
+#     print(classificar(email), "->", email["assunto"])
+#
+# print(MEMORIA)
+# print(nota_da_pista("fatura"))
+# print(nota_da_pista("oferta"))
+# print(nota_da_pista("pizza"))
+#
+# email_teste1 = {"remetente": "fatura@vivo.com.br", "assunto": "Nova fatura disponível"}
+# email_teste2 = {"remetente": "promo@steampowered.com", "assunto": "Nova oferta na sua lista"}
+# email_teste3 = {"remetente": "oi@pizzaria.com", "assunto": "Promoção de pizza"}
+# print(calcular_nota(email_teste1))
+# print(calcular_nota(email_teste2))
+# print(calcular_nota(email_teste3))
+
+# ---------------------------------------------------------------
+# 1. Aprender
+# ---------------------------------------------------------------
+aprender(caixa_de_entrada[6], "importante")   # Vivo
+aprender(caixa_de_entrada[5], "importante")   # TikTok
+aprender(caixa_de_entrada[0], "lixo")         # Steam
+
+# ---------------------------------------------------------------
+# 2. Testar com e-mails novos (nenhuma regra fixa cobre esses dois)
+# ---------------------------------------------------------------
+email_teste4 = {"remetente": "loja@shop.tiktok.com", "assunto": "Seus achados chegaram"}
+email_teste5 = {"remetente": "ofertas@lojanova.com", "assunto": "Grounded e outros desejos"}
+
+print(classificar(email_teste4))
+print(classificar(email_teste5))
