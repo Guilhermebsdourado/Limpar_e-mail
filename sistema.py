@@ -1,13 +1,9 @@
 import os
-caixa_de_entrada = [
-    {"remetente": "noreply@steampowered.com", "assunto": "Grounded, da sua lista de desejos, está em oferta!"},
-    {"remetente": "no-reply@pandape.com.br", "assunto": "Envio de Questionário"},
-    {"remetente": "linkedin@em.linkedin.com", "assunto": "Guilherme, agradecemos sua participação no LinkedIn"},
-    {"remetente": "messages-noreply@linkedin.com", "assunto": "6 pessoas viram seu perfil"},
-    {"remetente": "messages-noreply@linkedin.com", "assunto": "Uma pessoa da empresa Bear System que você talvez conheça"},
-    {"remetente": "no-reply@shop.tiktok.com", "assunto": "【180 Hz】Achados para... acabou de ser enviado"},
-    {"remetente": "contadigitalvivo@vivo.com.br", "assunto": "Sua Fatura Digital Vivo Chegou"},
-]
+import json
+
+from gmail import buscar_emails, mover_para_limpeza, mover_antigos_para_lixeira, PASTA_LIMPEZA
+# Agora a caixa de entrada vem do Gmail (veja o final do arquivo)
+caixa_de_entrada = []
 
 
 MEMORIA = {
@@ -37,6 +33,44 @@ def calcular_nota(email):
     else:
         return sum(notas) / len(notas)
         
+def adicionar_em_lote():
+    tipo = input("Essas regras são (i)mportantes ou (l)ixo? ").strip().lower()
+    if tipo != "i" and tipo != "l":
+        print("Opção inválida")
+        return
+
+    texto = input("Cole tudo separado por vírgula:\n").lower()
+    adicionados = 0
+    repetidos = 0
+
+    for item in texto.split(","):
+        item = item.strip()
+        if item == "":
+            continue
+
+        if len(item.split()) == 1:
+            if tipo == "i":
+                lista = PISTAS_IMPORTANTES
+            else:
+                lista = PISTAS_LIXO
+        else:
+            if tipo == "i":
+                lista = FRASES_IMPORTANTES
+            else:
+                lista = FRASES_LIXO
+
+        if item in lista:
+            repetidos += 1
+            continue
+
+        lista.append(item)
+        adicionados += 1
+
+    salvar()
+    print(f"✅ {adicionados} regras adicionadas ({repetidos} já existiam).")
+    print("-----------------------------------------------------")
+
+
 def adicionar_regra():
     while True:
         print("Quer adicionar alguma coisa?")
@@ -45,6 +79,8 @@ def adicionar_regra():
         print("3 - frase importante")
         print("4 - frase lixo")
         print("5 - Pode rodar o sistema, já está como eu quero")
+        print("6 - Adicionar várias de uma vez (separadas por vírgula)")
+        print("7 - Apagar e-mails com mais de 4 anos")
         opcao = input("Escolha: ")
         try: 
             numero = int(opcao)
@@ -57,6 +93,13 @@ def adicionar_regra():
         if numero == 5:
             os.system("cls")
             break
+        elif numero == 6:
+            adicionar_em_lote()
+            continue
+        elif numero == 7:
+            mover_antigos_para_lixeira(anos=4)
+            print("-----------------------------------------------------")
+            continue
         elif 0 < numero <= 4:
             while True:
                 texto = input("Digite a palavra ou frase: ").lower()
@@ -179,39 +222,118 @@ def classificar(email):
         return "lixo"
     else:
         return "não sei"
-    
-# ---------------------------------------------------------------
-# Testes antigos (já cumpriram o papel, ficam comentados)
-# ---------------------------------------------------------------
-# adicionar_regra()
-#
-# for email in caixa_de_entrada:
-#     print(classificar(email), "->", email["assunto"])
-#
-# print(MEMORIA)
-# print(nota_da_pista("fatura"))
-# print(nota_da_pista("oferta"))
-# print(nota_da_pista("pizza"))
-#
-# email_teste1 = {"remetente": "fatura@vivo.com.br", "assunto": "Nova fatura disponível"}
-# email_teste2 = {"remetente": "promo@steampowered.com", "assunto": "Nova oferta na sua lista"}
-# email_teste3 = {"remetente": "oi@pizzaria.com", "assunto": "Promoção de pizza"}
-# print(calcular_nota(email_teste1))
-# print(calcular_nota(email_teste2))
-# print(calcular_nota(email_teste3))
+def perguntar_categoria():
+    while True:
+        resposta = input("   É (i)mportante ou (l)ixo? ").strip().lower()
+        if resposta == "i":
+            return "importante"
+        elif resposta == "l":
+            return "lixo"
+        print("   Digite i ou l.")
 
-# ---------------------------------------------------------------
-# 1. Aprender
-# ---------------------------------------------------------------
-aprender(caixa_de_entrada[6], "importante")   # Vivo
-aprender(caixa_de_entrada[5], "importante")   # TikTok
-aprender(caixa_de_entrada[0], "lixo")         # Steam
 
-# ---------------------------------------------------------------
-# 2. Testar com e-mails novos (nenhuma regra fixa cobre esses dois)
-# ---------------------------------------------------------------
-email_teste4 = {"remetente": "loja@shop.tiktok.com", "assunto": "Seus achados chegaram"}
-email_teste5 = {"remetente": "ofertas@lojanova.com", "assunto": "Grounded e outros desejos"}
+def revisar_caixa():
+    decididos = 0
+    lixo = []   # uids dos e-mails que vão para a pasta de limpeza
 
-print(classificar(email_teste4))
-print(classificar(email_teste5))
+    for email in caixa_de_entrada:
+        print()
+        print("De:", email["remetente"])
+        print("Assunto:", email["assunto"])
+
+        palpite = classificar(email)
+
+        if palpite == "não sei":
+            print("   Não sei classificar esse.")
+            categoria = perguntar_categoria()
+            aprender(email, categoria)
+        else:
+            print(f"   → {palpite.upper()}")
+            categoria = palpite
+            decididos += 1
+
+        if categoria == "lixo":
+            lixo.append(email["uid"])
+
+    print()
+    print(f"Decidi sozinho {decididos} de {len(caixa_de_entrada)}")
+    return lixo
+
+
+ARQUIVO_MEMORIA = "memoria.json"
+
+def salvar():
+    dados = {
+        "memoria": MEMORIA,
+        "pistas_importantes": PISTAS_IMPORTANTES,
+        "pistas_lixo": PISTAS_LIXO,
+        "frases_importantes": FRASES_IMPORTANTES,
+        "frases_lixo": FRASES_LIXO,
+    }
+    with open(ARQUIVO_MEMORIA, "w", encoding="utf-8") as arquivo:
+        json.dump(dados, arquivo, ensure_ascii=False, indent=2)
+
+
+def carregar():
+    if not os.path.exists(ARQUIVO_MEMORIA):
+        print("Primeira vez rodando: começando do zero.")
+        return
+
+    with open(ARQUIVO_MEMORIA, "r", encoding="utf-8") as arquivo:
+        dados = json.load(arquivo)
+
+    MEMORIA["importante"] = dados["memoria"]["importante"]
+    MEMORIA["lixo"] = dados["memoria"]["lixo"]
+
+    PISTAS_IMPORTANTES.clear()
+    PISTAS_IMPORTANTES.extend(dados["pistas_importantes"])
+    PISTAS_LIXO.clear()
+    PISTAS_LIXO.extend(dados["pistas_lixo"])
+    FRASES_IMPORTANTES.clear()
+    FRASES_IMPORTANTES.extend(dados["frases_importantes"])
+    FRASES_LIXO.clear()
+    FRASES_LIXO.extend(dados["frases_lixo"])
+
+    print("Memória carregada!")
+
+
+carregar()
+adicionar_regra()
+
+TAMANHO_LOTE = 1000
+inicio = 0   # de onde começar a ler (0 = o e-mail mais novo)
+
+while True:
+    print()
+    print(f"Buscando e-mails {inicio + 1} a {inicio + TAMANHO_LOTE}...")
+    caixa_de_entrada = buscar_emails(inicio=inicio, quantidade=TAMANHO_LOTE)
+
+    if len(caixa_de_entrada) == 0:
+        print("Acabaram os e-mails da Caixa de entrada! 🎉")
+        break
+
+    lixo = revisar_caixa()
+    salvar()
+
+    print()
+    print(f"{len(lixo)} e-mails foram classificados como LIXO.")
+    movidos = False
+    if lixo:
+        confirma = input("Mover esses e-mails para a LIXEIRA do Gmail? (s/n) ").strip().lower()
+        if confirma == "s":
+            mover_para_limpeza(lixo)
+            movidos = True
+        else:
+            print("Ok, nada foi movido.")
+
+    # Os e-mails movidos saem da Caixa de entrada, então a lista "anda".
+    # Só pulamos os que FICARAM lá.
+    if movidos:
+        inicio += len(caixa_de_entrada) - len(lixo)
+    else:
+        inicio += len(caixa_de_entrada)
+
+    continuar = input("\nIr para o próximo lote? (s/n) ").strip().lower()
+    if continuar != "s":
+        print("Até a próxima!")
+        break
